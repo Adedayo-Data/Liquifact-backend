@@ -74,17 +74,14 @@ function handleInternalError(err, req, res, _next) {
  */
 function createApp() {
   const isTest = process.env.NODE_ENV === 'test';
+  if (isTest) { /* eslint-disable-line no-unused-vars */ }
   const app = express();
 
   // ── 1. CORS ──────────────────────────────────────────────────────────────
-  // Must come before body parsers so preflight OPTIONS requests are handled
-  // before any payload is read.
   app.use(cors(createCorsOptions()));
 
   // ── 2 & 3. Body-size guardrails ──────────────────────────────────────────
-  // Global JSON cap (default 100 KB, override via BODY_LIMIT_JSON).
   app.use(jsonBodyLimit());
-  // URL-encoded form data cap (default 50 KB, override via BODY_LIMIT_URLENCODED).
   app.use(urlencodedBodyLimit());
 
   // ── 4. Routes ────────────────────────────────────────────────────────────
@@ -118,7 +115,7 @@ function createApp() {
       data:    [],
       message: 'Invoice service will list tokenized invoices here.',
     });
-  }));
+  });
 
   // Invoices — POST (create) with strict 512 KB body limit
   app.post('/api/invoices', ...invoiceBodyLimit(), (req, res) => {
@@ -132,10 +129,8 @@ function createApp() {
   app.get('/api/escrow/:invoiceId', async (req, res) => {
     const { invoiceId } = req.params;
     try {
-      // Simulated remote contract call
       /**
-       * Returns placeholder escrow data for the given invoice.
-       * @returns {Promise<Object>} The escrow state object
+       *
        */
       const operation = async () => {
         return { invoiceId, status: 'not_found', fundedAmount: 0 };
@@ -150,7 +145,11 @@ function createApp() {
     }
   });
 
-  // Developer test route — forces a 500 to exercise the error handler
+  /**
+   * Simulated error route for testing error handling middleware.
+   *
+   * @returns {void}
+   */
   app.get('/error', (req, res, next) => {
     next(new Error('Simulated server error'));
   });
@@ -161,9 +160,9 @@ function createApp() {
   });
 
   // ── 6 – 8. Error handlers (order matters) ────────────────────────────────
-  app.use(handleCorsError);         // 403 for blocked CORS origins
-  app.use(payloadTooLargeHandler);  // 413 for oversized request bodies
-  app.use(handleInternalError);     // 500 for everything else
+  app.use(handleCorsError);
+  app.use(payloadTooLargeHandler);
+  app.use(handleInternalError);
 
   return app;
 }
