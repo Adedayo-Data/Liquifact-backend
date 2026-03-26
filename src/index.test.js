@@ -1,7 +1,16 @@
 const request = require('supertest');
+const jwt = require('jsonwebtoken');
 const { app, resetStore, startServer } = require('./index');
 
 describe('LiquiFact API', () => {
+  const secret = process.env.JWT_SECRET || 'test-secret';
+  const authHeader = () => {
+    const token = jwt.sign({ id: `index_test_user_${Date.now()}_${Math.random()}` }, secret, {
+      expiresIn: '1h',
+    });
+    return `Bearer ${token}`;
+  };
+
   beforeEach(() => {
     resetStore();
   });
@@ -24,6 +33,7 @@ describe('LiquiFact API', () => {
     it('POST /api/invoices - creates a new invoice', async () => {
       const response = await request(app)
         .post('/api/invoices')
+        .set('Authorization', authHeader())
         .send({ amount: 1000, customer: 'Test Corp' });
       
       expect(response.status).toBe(201);
@@ -34,14 +44,23 @@ describe('LiquiFact API', () => {
     });
 
     it('POST /api/invoices - fails if missing fields', async () => {
-      const response = await request(app).post('/api/invoices').send({ amount: 1000 });
+      const response = await request(app)
+        .post('/api/invoices')
+        .set('Authorization', authHeader())
+        .send({ amount: 1000 });
       expect(response.status).toBe(400);
       expect(response.body).toHaveProperty('error');
     });
 
     it('GET /api/invoices - lists active invoices', async () => {
-      await request(app).post('/api/invoices').send({ amount: 1000, customer: 'A' });
-      await request(app).post('/api/invoices').send({ amount: 2000, customer: 'B' });
+      await request(app)
+        .post('/api/invoices')
+        .set('Authorization', authHeader())
+        .send({ amount: 1000, customer: 'A' });
+      await request(app)
+        .post('/api/invoices')
+        .set('Authorization', authHeader())
+        .send({ amount: 2000, customer: 'B' });
 
       const response = await request(app).get('/api/invoices');
       expect(response.status).toBe(200);
@@ -51,6 +70,7 @@ describe('LiquiFact API', () => {
     it('DELETE /api/invoices/:id - soft deletes an invoice', async () => {
       const postRes = await request(app)
         .post('/api/invoices')
+        .set('Authorization', authHeader())
         .send({ amount: 500, customer: 'Delete Me' });
       const id = postRes.body.data.id;
 
@@ -71,7 +91,10 @@ describe('LiquiFact API', () => {
       const res404 = await request(app).delete('/api/invoices/nonexistent');
       expect(res404.status).toBe(404);
 
-      const postRes = await request(app).post('/api/invoices').send({ amount: 100, customer: 'X' });
+      const postRes = await request(app)
+        .post('/api/invoices')
+        .set('Authorization', authHeader())
+        .send({ amount: 100, customer: 'X' });
       const id = postRes.body.data.id;
       await request(app).delete(`/api/invoices/${id}`);
       
@@ -81,7 +104,10 @@ describe('LiquiFact API', () => {
     });
 
     it('PATCH /api/invoices/:id/restore - restores a deleted invoice', async () => {
-      const postRes = await request(app).post('/api/invoices').send({ amount: 100, customer: 'X' });
+      const postRes = await request(app)
+        .post('/api/invoices')
+        .set('Authorization', authHeader())
+        .send({ amount: 100, customer: 'X' });
       const id = postRes.body.data.id;
       await request(app).delete(`/api/invoices/${id}`);
 
@@ -97,7 +123,10 @@ describe('LiquiFact API', () => {
       const res404 = await request(app).patch('/api/invoices/nonexistent/restore');
       expect(res404.status).toBe(404);
 
-      const postRes = await request(app).post('/api/invoices').send({ amount: 100, customer: 'X' });
+      const postRes = await request(app)
+        .post('/api/invoices')
+        .set('Authorization', authHeader())
+        .send({ amount: 100, customer: 'X' });
       const id = postRes.body.data.id;
       
       const res400 = await request(app).patch(`/api/invoices/${id}/restore`);
@@ -125,6 +154,37 @@ describe('LiquiFact API', () => {
       const response = await request(app).get('/api/escrow/123');
       expect(response.status).toBe(200);
       expect(response.body.data).toHaveProperty('invoiceId', '123');
+    });
+
+    it('POST /api/escrow - sanitizes user-supplied fields', async () => {
+      const response = await request(app)
+        .post('/api/escrow')
+        .set('Authorization', authHeader())
+        .send({ invoiceId: '  abc-123 \n', fundedAmount: 10 });
+
+      expect(response.status).toBe(200);
+      expect(response.body.data).toHaveProperty('invoiceId', 'abc-123');
+    });
+  });
+
+  describe('Sanitization', () => {
+    it('POST /api/invoices - normalizes customer input before persistence', async () => {
+      const response = await request(app)
+        .post('/api/invoices')
+        .set('Authorization', authHeader())
+        .send({ amount: 1000, customer: '  ACME \n Holdings \u0000 ' });
+
+      expect(response.status).toBe(201);
+      expect(response.body.data.customer).toBe('ACME Holdings');
+    });
+
+    it('POST /api/invoices - rejects missing token before processing payload', async () => {
+      const response = await request(app)
+        .post('/api/invoices')
+        .send({ amount: 1000, customer: '  ACME \n Holdings \u0000 ' });
+
+      expect(response.status).toBe(401);
+      expect(response.body.error).toBe('Authentication token is required');
     });
   });
 

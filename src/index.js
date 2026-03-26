@@ -4,13 +4,15 @@
  */
 
 require('dotenv').config();
+const express = require('express');
+const cors = require('cors');
 const { globalLimiter, sensitiveLimiter } = require('./middleware/rateLimit');
 const { authenticateToken } = require('./middleware/auth');
-
-const asyncHandler = require('./utils/asyncHandler');
+const { sanitizeInput } = require('./middleware/sanitizeInput');
 const errorHandler = require('./middleware/errorHandler');
 const { callSorobanContract } = require('./services/soroban');
 
+const app = express();
 const PORT = process.env.PORT || 3001;
 
 /**
@@ -18,6 +20,8 @@ const PORT = process.env.PORT || 3001;
  */
 app.use(cors());
 app.use(express.json());
+app.use(sanitizeInput);
+app.use(globalLimiter);
 
 // In-memory storage for invoices (Issue #25)
 let invoices = [];
@@ -25,12 +29,12 @@ let invoices = [];
 /**
  * Health check endpoint.
  * Returns the current status and version of the service.
- * 
- * @param {import('express').Request} req - The Express request object.
+ *
+ * @param {import('express').Request} _req - The Express request object.
  * @param {import('express').Response} res - The Express response object.
  * @returns {void}
  */
-app.get('/health', (req, res) => {
+app.get('/health', (_req, res) => {
   return res.json({
     status: 'ok',
     service: 'liquifact-api',
@@ -42,12 +46,12 @@ app.get('/health', (req, res) => {
 /**
  * API information endpoint.
  * Lists available endpoints and service description.
- * 
- * @param {import('express').Request} req - The Express request object.
+ *
+ * @param {import('express').Request} _req - The Express request object.
  * @param {import('express').Response} res - The Express response object.
  * @returns {void}
  */
-app.get('/api', (req, res) => {
+app.get('/api', (_req, res) => {
   return res.json({
     name: 'LiquiFact API',
     description: 'Global Invoice Liquidity Network on Stellar',
@@ -62,34 +66,36 @@ app.get('/api', (req, res) => {
 /**
  * Lists tokenized invoices.
  * Filters out soft-deleted records unless explicitly requested.
- * 
+ *
  * @param {import('express').Request} req - The Express request object.
  * @param {import('express').Response} res - The Express response object.
  * @returns {void}
  */
 app.get('/api/invoices', (req, res) => {
   const includeDeleted = req.query.includeDeleted === 'true';
-  const filteredInvoices = includeDeleted 
-    ? invoices 
-    : invoices.filter(inv => !inv.deletedAt);
+  const filteredInvoices = includeDeleted
+    ? invoices
+    : invoices.filter((inv) => !inv.deletedAt);
 
   return res.json({
     data: filteredInvoices,
-    message: includeDeleted ? 'Showing all invoices (including deleted).' : 'Showing active invoices.',
+    message: includeDeleted
+      ? 'Showing all invoices (including deleted).'
+      : 'Showing active invoices.',
   });
 });
 
 /**
  * Uploads and tokenizes a new invoice.
  * Generates a unique ID and sets the creation timestamp.
- * 
+ *
  * @param {import('express').Request} req - The Express request object.
  * @param {import('express').Response} res - The Express response object.
  * @returns {void}
  */
-app.post('/api/invoices', (req, res) => {
+app.post('/api/invoices', authenticateToken, sensitiveLimiter, (req, res) => {
   const { amount, customer } = req.body;
-  
+
   if (!amount || !customer) {
     return res.status(400).json({ error: 'Amount and customer are required' });
   }
@@ -114,30 +120,27 @@ app.post('/api/invoices', (req, res) => {
 /**
  * Performs a soft delete on an invoice.
  * Sets the deletedAt timestamp instead of removing the record.
- * 
+ *
  * @param {import('express').Request} req - The Express request object.
  * @param {import('express').Response} res - The Express response object.
  * @returns {void}
  */
 app.delete('/api/invoices/:id', (req, res) => {
   const { id } = req.params;
-  const invoiceIndex = invoices.findIndex(inv => inv.id === id);
+  const invoiceIndex = invoices.findIndex((inv) => inv.id === id);
 
   if (invoiceIndex === -1) {
     return res.status(404).json({ error: 'Invoice not found' });
   }
 
-  // eslint-disable-next-line security/detect-object-injection
   if (invoices[invoiceIndex].deletedAt) {
     return res.status(400).json({ error: 'Invoice is already deleted' });
   }
 
-  // eslint-disable-next-line security/detect-object-injection
   invoices[invoiceIndex].deletedAt = new Date().toISOString();
 
   return res.json({
     message: 'Invoice soft-deleted successfully.',
-    // eslint-disable-next-line security/detect-object-injection
     data: invoices[invoiceIndex],
   });
 });
@@ -145,38 +148,54 @@ app.delete('/api/invoices/:id', (req, res) => {
 /**
  * Restores a soft-deleted invoice.
  * Resets the deletedAt timestamp to null.
- * 
+ *
  * @param {import('express').Request} req - The Express request object.
  * @param {import('express').Response} res - The Express response object.
  * @returns {void}
  */
 app.patch('/api/invoices/:id/restore', (req, res) => {
   const { id } = req.params;
-  const invoiceIndex = invoices.findIndex(inv => inv.id === id);
+  const invoiceIndex = invoices.findIndex((inv) => inv.id === id);
 
   if (invoiceIndex === -1) {
     return res.status(404).json({ error: 'Invoice not found' });
   }
 
-  // eslint-disable-next-line security/detect-object-injection
   if (!invoices[invoiceIndex].deletedAt) {
     return res.status(400).json({ error: 'Invoice is not deleted' });
   }
 
-  // eslint-disable-next-line security/detect-object-injection
   invoices[invoiceIndex].deletedAt = null;
 
   return res.json({
     message: 'Invoice restored successfully.',
-    // eslint-disable-next-line security/detect-object-injection
     data: invoices[invoiceIndex],
+  });
+});
+
+/**
+ * Creates escrow state for a specific invoice.
+ *
+ * @param {import('express').Request} req - The Express request object.
+ * @param {import('express').Response} res - The Express response object.
+ * @returns {void}
+ */
+app.post('/api/escrow', authenticateToken, sensitiveLimiter, (req, res) => {
+  const invoiceId = req.body.invoiceId || 'placeholder_invoice';
+
+  return res.json({
+    data: {
+      invoiceId,
+      status: 'funded',
+      fundedAmount: req.body.fundedAmount || 0,
+    },
   });
 });
 
 /**
  * Retrieves escrow state for a specific invoice.
  * Robust integration wrapper for Soroban contract interaction.
- * 
+ *
  * @param {import('express').Request} req - The Express request object.
  * @param {import('express').Response} res - The Express response object.
  * @returns {Promise<void>}
@@ -187,15 +206,15 @@ app.get('/api/escrow/:invoiceId', async (req, res) => {
   try {
     /**
      * Simulated remote contract call.
-     * 
-     * @returns {Promise<Object>} The escrow data.
+     *
+     * @returns {Promise<object>} The escrow data.
      */
     const operation = async () => {
       return { invoiceId, status: 'not_found', fundedAmount: 0 };
     };
 
     const data = await callSorobanContract(operation);
-    
+
     res.json({
       data,
       message: 'Escrow state read from Soroban contract via robust integration wrapper.',
@@ -207,7 +226,7 @@ app.get('/api/escrow/:invoiceId', async (req, res) => {
 
 /**
  * 404 handler for unknown routes.
- * 
+ *
  * @param {import('express').Request} req - The Express request object.
  * @param {import('express').Response} res - The Express response object.
  * @param {import('express').NextFunction} next - The next middleware function.
@@ -220,24 +239,11 @@ app.use((req, res, next) => {
   return res.status(404).json({ error: 'Not found', path: req.path });
 });
 
-/**
- * Global error handler.
- * Logs the error and returns a 500 status.
- * 
- * @param {Error} err - The error object.
- * @param {import('express').Request} req - The Express request object.
- * @param {import('express').Response} res - The Express response object.
- * @param {import('express').NextFunction} _next - The next middleware function.
- * @returns {void}
- */
-app.use((err, req, res, _next) => {
-  console.error(err);
-  return res.status(500).json({ error: 'Internal server error' });
-});
+app.use(errorHandler);
 
 /**
  * Starts the Express server.
- * 
+ *
  * @returns {import('http').Server} The started server.
  */
 const startServer = () => {
@@ -249,7 +255,7 @@ const startServer = () => {
 
 /**
  * Resets the in-memory store (for testing purposes).
- * 
+ *
  * @returns {void}
  */
 const resetStore = () => {
@@ -257,9 +263,12 @@ const resetStore = () => {
 };
 
 // Start server if not in test mode
-if (process.env.NODE_ENV !== 'test') {
+if (process.env.NODE_ENV !== 'test' && !process.env.JEST_WORKER_ID) {
   startServer();
 }
 
-// Export app and state for testing
-module.exports = { app, startServer, resetStore };
+// Export in both common patterns to avoid breaking existing tests/imports.
+module.exports = app;
+module.exports.app = app;
+module.exports.startServer = startServer;
+module.exports.resetStore = resetStore;

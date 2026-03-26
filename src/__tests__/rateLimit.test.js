@@ -23,7 +23,7 @@ describe('Rate Limiting Middleware', () => {
                 const response = await request(app)
                     .post('/api/invoices')
                     .set('Authorization', `Bearer ${validToken}`)
-                    .send({});
+                    .send({ amount: 1000, customer: 'Rate Ltd' });
 
                 // If we hit a 429 early because of previous tests, we just break and check the next one.
                 if (response.status === 429) break;
@@ -34,7 +34,7 @@ describe('Rate Limiting Middleware', () => {
             const throttledResponse = await request(app)
                 .post('/api/invoices')
                 .set('Authorization', `Bearer ${validToken}`)
-                .send({});
+                .send({ amount: 1000, customer: 'Rate Ltd' });
 
             expect(throttledResponse.status).toBe(429);
             expect(throttledResponse.body.error).toContain('rate limit exceeded');

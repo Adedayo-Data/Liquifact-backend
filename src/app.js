@@ -3,6 +3,7 @@ const cors = require('cors');
 require('dotenv').config();
 
 const { callSorobanContract } = require('./services/soroban');
+const { sanitizeInput } = require('./middleware/sanitizeInput');
 const {
   createCorsOptions,
   isCorsOriginRejectedError,
@@ -50,6 +51,7 @@ function createApp() {
 
   app.use(cors(createCorsOptions()));
   app.use(express.json());
+  app.use(sanitizeInput);
 
   // Health check
   app.get('/health', (req, res) => {
