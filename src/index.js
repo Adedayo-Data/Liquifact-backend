@@ -4,14 +4,24 @@
  */
 
 require('dotenv').config();
-const { globalLimiter, sensitiveLimiter } = require('./middleware/rateLimit');
-const { authenticateToken } = require('./middleware/auth');
+const express = require('express');
+const cors = require('cors');
+const { globalLimiter: _globalLimiter, sensitiveLimiter: _sensitiveLimiter } = require('./middleware/rateLimit');
+const { authenticateToken: _authenticateToken } = require('./middleware/auth');
 
 const asyncHandler = require('./utils/asyncHandler');
 const errorHandler = require('./middleware/errorHandler');
 const { callSorobanContract } = require('./services/soroban');
 
+// Suppress unused-var warnings until these middlewares are wired to routes
+void _globalLimiter;
+void _sensitiveLimiter;
+void _authenticateToken;
+void asyncHandler;
+void errorHandler;
+
 const PORT = process.env.PORT || 3001;
+const app = express();
 
 /**
  * Global Middlewares
