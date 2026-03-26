@@ -7,6 +7,8 @@ const express = require('express');
 const cors = require('cors');
 const AppError = require('./errors/AppError');
 const errorHandler = require('./middleware/errorHandler');
+const AppError = require('./errors/AppError');
+const errorHandler = require('./middleware/errorHandler');
 require('dotenv').config();
 const { globalLimiter, sensitiveLimiter } = require('./middleware/rateLimit');
 const { authenticateToken } = require('./middleware/auth');
@@ -140,34 +142,23 @@ app.delete('/api/invoices/:id', (req, res) => {
   });
 });
 
-/**
- * Restores a soft-deleted invoice.
- * Resets the deletedAt timestamp to null.
- * 
- * @param {import('express').Request} req - The Express request object.
- * @param {import('express').Response} res - The Express response object.
- * @returns {void}
- */
-app.patch('/api/invoices/:id/restore', (req, res) => {
-  const { id } = req.params;
-  const invoiceIndex = invoices.findIndex(inv => inv.id === id);
-
-  if (invoiceIndex === -1) {
-    return res.status(404).json({ error: 'Invoice not found' });
+app.post('/api/invoices', (req, res, next) => {
+  const { amount } = req.body;
+  if (!amount) {
+    // Example: Validation error following RFC 7807
+    return next(
+      new AppError({
+        type: 'https://liquifact.com/probs/invalid-request',
+        title: 'Validation Error',
+        status: 400,
+        detail: "The 'amount' field is required for invoice creation.",
+        instance: req.originalUrl,
+      })
+    );
   }
-
-  // eslint-disable-next-line security/detect-object-injection
-  if (!invoices[invoiceIndex].deletedAt) {
-    return res.status(400).json({ error: 'Invoice is not deleted' });
-  }
-
-  // eslint-disable-next-line security/detect-object-injection
-  invoices[invoiceIndex].deletedAt = null;
-
-  return res.json({
-    message: 'Invoice restored successfully.',
-    // eslint-disable-next-line security/detect-object-injection
-    data: invoices[invoiceIndex],
+  res.status(201).json({
+    data: { id: 'placeholder', status: 'pending_verification' },
+    message: 'Invoice upload will be implemented with verification and tokenization.',
   });
 });
 
@@ -203,61 +194,26 @@ app.get('/api/escrow/:invoiceId', async (req, res) => {
   }
 });
 
-/**
- * 404 handler for unknown routes.
- * 
- * @param {import('express').Request} req - The Express request object.
- * @param {import('express').Response} res - The Express response object.
- * @param {import('express').NextFunction} next - The next middleware function.
- * @returns {void}
- */
+// Handle 404
 app.use((req, res, next) => {
-  if (req.path === '/error-test-trigger') {
-    return next(new Error('Test error'));
-  }
-  return res.status(404).json({ error: 'Not found', path: req.path });
+  next(
+    new AppError({
+      type: 'https://liquifact.com/probs/not-found',
+      title: 'Resource Not Found',
+      status: 404,
+      detail: `The path ${req.path} does not exist.`,
+      instance: req.originalUrl,
+    })
+  );
 });
 
-/**
- * Global error handler.
- * Logs the error and returns a 500 status.
- * 
- * @param {Error} err - The error object.
- * @param {import('express').Request} req - The Express request object.
- * @param {import('express').Response} res - The Express response object.
- * @param {import('express').NextFunction} _next - The next middleware function.
- * @returns {void}
- */
-app.use((err, req, res, _next) => {
-  console.error(err);
-  return res.status(500).json({ error: 'Internal server error' });
-});
+// Centralized Global Error Handler
+app.use(errorHandler);
 
-/**
- * Starts the Express server.
- * 
- * @returns {import('http').Server} The started server.
- */
-const startServer = () => {
-  const server = app.listen(PORT, () => {
-    console.warn(`LiquiFact API running at http://localhost:${PORT}`);
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`LiquiFact API running at http://localhost:${PORT}`);
   });
-  return server;
-};
-
-/**
- * Resets the in-memory store (for testing purposes).
- * 
- * @returns {void}
- */
-const resetStore = () => {
-  invoices = [];
-};
-
-// Start server if not in test mode
-if (process.env.NODE_ENV !== 'test') {
-  startServer();
 }
 
-// Export app and state for testing
-module.exports = { app, startServer, resetStore };
+module.exports = app;
