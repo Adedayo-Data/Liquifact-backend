@@ -125,18 +125,60 @@ Production default:
 
 ---
 
+## API Response Structure
+
+All endpoints return a standardized JSON envelope:
+
+```json
+{
+  "data": { ... },
+  "meta": {
+    "timestamp": "2026-03-24T09:55:00.000Z",
+    "version": "0.1.0"
+  },
+  "error": null
+}
+```
+
+In case of an error:
+
+```json
+{
+  "data": null,
+  "meta": { ... },
+  "error": {
+    "message": "Human readable message",
+    "code": "ERROR_CODE",
+    "details": { ... }
+  }
+}
+```
+
+---
+
 ## Project structure
 
 ```
 liquifact-backend/
 ├── src/
-│   ├── config/
+│   ├── app.js               # Express application setup
+│   ├── index.js             # Server entry point
+│   ├── utils/
+│   │   └── responseHelper.js # Standardized response logic
+│   └── tests/
+│       └── response.test.js # Coverage-backed integration tests
+├── .env.example
+│   │   └── cors.js     # CORS allowlist parsing and policy
 │   │   └── cors.js       # CORS allowlist parsing and policy
 │   ├── middleware/
 │   │   └── security.js   # Helmet security header configuration
 │   ├── services/
 │   │   └── soroban.js    # Contract interaction wrappers
 │   ├── utils/
+│   │   └── retry.js    # Exponential backoff utility
+│   ├── app.js          # Express app, middleware, routes
+│   └── index.js        # Runtime bootstrap
+├── .env.example        # Env template
 │   │   └── retry.js      # Exponential backoff utility
 │   ├── index.js          # Express app, routes, error handler (importable for tests)
 │   ├── index.test.js     # Integration + security header tests (Jest + supertest)

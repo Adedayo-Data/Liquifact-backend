@@ -2,6 +2,9 @@
 
 /**
  * LiquiFact API Gateway
+ * Express server bootstrap for invoice financing, auth, and Stellar integration.
+ */
+
  * Express app configuration for invoice financing, auth, and Stellar integration.
  * Server startup lives in server.js so this module can be imported cleanly in tests.
  */
@@ -13,6 +16,8 @@ require('dotenv').config();
 const { globalLimiter, sensitiveLimiter } = require('./middleware/rateLimit');
 const { authenticateToken } = require('./middleware/auth');
 
+const asyncHandler = require('./utils/asyncHandler');
+const errorHandler = require('./middleware/errorHandler');
 const { callSorobanContract } = require('./services/soroban');
 
 const PORT = process.env.PORT || 3001;
@@ -271,6 +276,8 @@ if (process.env.NODE_ENV !== 'test') {
   startServer();
 }
 
+// Export app and state for testing
+module.exports = { app, startServer, resetStore };
 // Export app as default (so `require('./index')` returns the Express app directly),
 // with startServer and resetStore attached as properties for tests that need them.
 module.exports = app;
