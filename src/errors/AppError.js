@@ -4,7 +4,9 @@
  */
 class AppError extends Error {
   /**
-   * @param {Object} params
+   * Creates an AppError instance with RFC 7807 Problem Details fields.
+   *
+   * @param {Object} params - Error parameters.
    * @param {string} params.type - A URI reference [RFC3986] that identifies the problem type.
    * @param {string} params.title - A short, human-readable summary of the problem type.
    * @param {number} params.status - The HTTP status code (e.g., 400, 404, 500).

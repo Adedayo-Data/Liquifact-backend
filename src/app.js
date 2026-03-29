@@ -30,9 +30,9 @@ const {
   payloadTooLargeHandler,
 } = require('./middleware/bodySizeLimits');
 
-const invoiceService = require('./services/invoice.service');
-const { validateInvoiceQueryParams } = require('./utils/validators');
-const asyncHandler = require('./utils/asyncHandler');
+const _invoiceService = require('./services/invoice.service');
+const _validateInvoiceQueryParams = require('./utils/validators').validateInvoiceQueryParams;
+const _asyncHandler = require('./utils/asyncHandler');
 
 /**
  * Returns a 403 JSON response only for the dedicated blocked-origin CORS error.
