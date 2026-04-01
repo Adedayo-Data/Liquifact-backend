@@ -1,8 +1,13 @@
 const cors = require('cors');
 
+jest.mock('./services/invoice.service', () => ({
+  getInvoices: jest.fn(),
+}));
+
 const { createApp, handleCorsError } = require('./app');
 const { CORS_REJECTION_MESSAGE } = require('./config/cors');
 const { createCorsOptions } = require('./config/cors');
+const invoiceService = require('./services/invoice.service');
 
 function withEnv(env, fn) {
   const previousValues = new Map();
@@ -270,7 +275,8 @@ describe('LiquiFact app integration', () => {
     });
   });
 
-  it('returns the invoice placeholder list', async () => {
+  it('returns the invoice list', async () => {
+    invoiceService.getInvoices.mockResolvedValue([]);
     const response = await invokeApp(createApp(), {
       path: '/api/invoices',
     });
@@ -278,7 +284,7 @@ describe('LiquiFact app integration', () => {
     expect(response.statusCode).toBe(200);
     expect(response.body).toEqual({
       data: [],
-      message: 'Invoice service will list tokenized invoices here.',
+      message: 'Invoices retrieved successfully.',
     });
   });
 
@@ -304,6 +310,19 @@ describe('LiquiFact app integration', () => {
     expect(response.body).toEqual({
       data: { invoiceId: 'invoice-123', status: 'not_found', fundedAmount: 0 },
       message: 'Escrow state read from Soroban contract via robust integration wrapper.',
+    });
+  });
+
+  it('sanitizes route params before escrow lookup', async () => {
+    const response = await invokeApp(createApp(), {
+      path: '/api/escrow/%20invoice-123%0A',
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body.data).toEqual({
+      invoiceId: 'invoice-123',
+      status: 'not_found',
+      fundedAmount: 0,
     });
   });
 
